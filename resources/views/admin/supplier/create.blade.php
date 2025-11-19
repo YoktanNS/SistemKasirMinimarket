@@ -1,0 +1,55 @@
+@extends('layouts.app')
+
+@section('title', 'Tambah Supplier')
+@section('page_title', 'Tambah Supplier Baru')
+
+@section('content')
+<div class="bg-white p-8 rounded-2xl shadow-md max-w-3xl mx-auto">
+    <form action="{{ route('admin.supplier.store') }}" method="POST" class="space-y-6">
+        @csrf
+        <div>
+            <label class="block font-semibold text-gray-700 mb-1">Kode Supplier</label>
+            <input type="text" name="kode_supplier" class="w-full border-gray-300 border rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500" required>
+        </div>
+
+        <div>
+            <label class="block font-semibold text-gray-700 mb-1">Nama Supplier</label>
+            <input type="text" name="nama_supplier" class="w-full border-gray-300 border rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500" required>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <label class="block font-semibold text-gray-700 mb-1">No. Telepon</label>
+                <input type="text" name="no_telepon" class="w-full border-gray-300 border rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label class="block font-semibold text-gray-700 mb-1">Email</label>
+                <input type="email" name="email" class="w-full border-gray-300 border rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500">
+            </div>
+        </div>
+
+        <div>
+            <label class="block font-semibold text-gray-700 mb-1">Alamat</label>
+            <textarea name="alamat" rows="3" class="w-full border-gray-300 border rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"></textarea>
+        </div>
+
+        <div>
+            <label class="block font-semibold text-gray-700 mb-1">Kontak Person</label>
+            <input type="text" name="kontak_person" class="w-full border-gray-300 border rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500">
+        </div>
+
+        <div>
+            <label class="block font-semibold text-gray-700 mb-1">Status</label>
+            <select name="status" class="w-full border-gray-300 border rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500">
+                <option value="Aktif" selected>Aktif</option>
+                <option value="Nonaktif">Nonaktif</option>
+            </select>
+        </div>
+
+        <div class="flex justify-end gap-3 pt-6">
+            <a href="{{ route('admin.supplier.index') }}" class="bg-gray-300 hover:bg-gray-400 text-gray-800 px-4 py-2 rounded-lg transition">Batal</a>
+            <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg shadow transition">Simpan</button>
+        </div>
+    </form>
+</div>
+@endsection

@@ -1,9 +1,13 @@
 <?php
+
 namespace Database\Seeders;
+
 use Illuminate\Database\Seeder;
 
-class DatabaseSeeder extends Seeder {
-    public function run(): void {
-        $this->call(ProductSeeder::class); // Tambahkan baris ini
+class DatabaseSeeder extends Seeder
+{
+    public function run(): void
+    {
+        $this->call(UserSeeder::class);
     }
 }
