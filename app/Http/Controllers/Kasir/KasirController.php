@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Schema;
 use Carbon\Carbon;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class KasirController extends Controller
 {
@@ -262,7 +263,7 @@ class KasirController extends Controller
     }
 
     /**
-     * UPDATE CART ITEM - Update quantity
+     * UPDATE CART ITEM - Update quantity (VERSI LAMA - untuk kompatibilitas)
      */
     public function updateCartItem(Request $request)
     {
@@ -310,7 +311,68 @@ class KasirController extends Controller
     }
 
     /**
-     * REMOVE FROM CART - Hapus dari keranjang
+     * UPDATE CART QTY - UPDATE QUANTITY BARU YANG BISA DIKETIK
+     */
+    public function updateCartQty(Request $request)
+    {
+        $request->validate([
+            'index' => 'required|integer',
+            'qty' => 'required|integer|min:1'
+        ]);
+
+        try {
+            $cart = session()->get('cart', []);
+
+            if (!isset($cart[$request->index])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Item tidak ditemukan di keranjang'
+                ], 404);
+            }
+
+            $item = &$cart[$request->index];
+            $produk = Produk::find($item['produk_id']);
+
+            if (!$produk) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Produk tidak ditemukan'
+                ], 404);
+            }
+
+            // Validasi stok
+            if ($request->qty > $produk->stok_tersedia) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Stok "' . $produk->nama_produk . '" tidak mencukupi. Stok tersedia: ' . $produk->stok_tersedia
+                ], 400);
+            }
+
+            // Update quantity
+            $item['qty'] = $request->qty;
+            $item['subtotal'] = $item['qty'] * $item['harga_jual'];
+
+            session(['cart' => $cart]);
+            $this->calculateCartTotal();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Quantity berhasil diupdate',
+                'subtotal' => session('subtotal', 0),
+                'total_bayar' => session('total_bayar', 0)
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Update Cart Qty Error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * REMOVE FROM CART - Hapus dari keranjang (VERSI AJAX)
      */
     public function removeFromCart(Request $request)
     {
@@ -318,18 +380,36 @@ class KasirController extends Controller
             'index' => 'required|integer'
         ]);
 
-        $cart = session()->get('cart', []);
+        try {
+            $cart = session()->get('cart', []);
 
-        if (isset($cart[$request->index])) {
-            $removedProduct = $cart[$request->index]['nama_produk'];
-            unset($cart[$request->index]);
-            $cart = array_values($cart);
-            session(['cart' => $cart]);
-            $this->calculateCartTotal();
-            return redirect()->route('kasir.index')->with('success', 'Produk "' . $removedProduct . '" dihapus dari keranjang');
+            if (isset($cart[$request->index])) {
+                $removedProduct = $cart[$request->index]['nama_produk'];
+                unset($cart[$request->index]);
+                $cart = array_values($cart);
+                session(['cart' => $cart]);
+                $this->calculateCartTotal();
+                
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Produk "' . $removedProduct . '" dihapus dari keranjang',
+                    'cart_count' => count($cart),
+                    'subtotal' => session('subtotal', 0)
+                ]);
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Item tidak ditemukan'
+            ], 404);
+
+        } catch (\Exception $e) {
+            Log::error('Remove from Cart Error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error: ' . $e->getMessage()
+            ], 500);
         }
-
-        return redirect()->route('kasir.index')->with('error', 'Item tidak ditemukan');
     }
 
     /**
@@ -829,6 +909,88 @@ class KasirController extends Controller
                 'success' => false,
                 'message' => 'Error: ' . $e->getMessage()
             ], 500);
+        }
+    }
+
+    /**
+     * EXPORT LAPORAN HARIAN PDF
+     */
+    public function exportLaporanHarian(Request $request)
+    {
+        try {
+            $tanggal = $request->get('tanggal', Carbon::today()->format('Y-m-d'));
+            
+            // Data transaksi hari ini
+            $transaksiHariIni = Transaksi::with('items')
+                ->where('kasir_id', Auth::id())
+                ->whereDate('tanggal_transaksi', $tanggal)
+                ->where('status', 'Selesai')
+                ->orderBy('tanggal_transaksi', 'desc')
+                ->get();
+
+            // Hitung total transaksi
+            $totalTransaksi = $transaksiHariIni->count();
+            
+            // Hitung total penjualan
+            $totalPenjualan = $transaksiHariIni->sum('total_bayar');
+            
+            // Hitung rata-rata transaksi
+            $rataRataTransaksi = $totalTransaksi > 0 ? $totalPenjualan / $totalTransaksi : 0;
+            
+            // Hitung total item terjual
+            $totalItemTerjual = TransaksiItem::whereHas('transaksi', function ($query) use ($tanggal) {
+                $query->where('kasir_id', Auth::id())
+                    ->whereDate('tanggal_transaksi', $tanggal)
+                    ->where('status', 'Selesai');
+            })->sum('qty');
+
+            // Data metode pembayaran
+            $metodePembayaran = Transaksi::select(
+                'metode_pembayaran',
+                DB::raw('COUNT(*) as total'),
+                DB::raw('SUM(total_bayar) as jumlah')
+            )
+                ->where('kasir_id', Auth::id())
+                ->whereDate('tanggal_transaksi', $tanggal)
+                ->where('status', 'Selesai')
+                ->groupBy('metode_pembayaran')
+                ->get();
+
+            // Data kas harian
+            $kasHarian = KasHarian::where('user_id', Auth::id())
+                ->whereDate('tanggal', $tanggal)
+                ->first();
+
+            $data = [
+                'transaksiHariIni' => $transaksiHariIni,
+                'totalTransaksi' => $totalTransaksi,
+                'totalPenjualan' => $totalPenjualan,
+                'rataRataTransaksi' => $rataRataTransaksi,
+                'totalItemTerjual' => $totalItemTerjual,
+                'metodePembayaran' => $metodePembayaran,
+                'kasHarian' => $kasHarian,
+                'tanggal' => $tanggal,
+                'tanggalFormatted' => Carbon::parse($tanggal)->translatedFormat('l, d F Y'),
+                'kasir' => Auth::user(),
+                'tanggalCetak' => Carbon::now()->translatedFormat('d F Y H:i:s')
+            ];
+
+            $filename = 'laporan-harian-' . $tanggal . '.pdf';
+
+            $pdf = Pdf::loadView('kasir.export.laporan-harian-pdf', $data)
+                ->setPaper('a4', 'portrait')
+                ->setOptions([
+                    'dpi' => 150,
+                    'defaultFont' => 'sans-serif',
+                    'isHtml5ParserEnabled' => true,
+                    'isRemoteEnabled' => true,
+                ]);
+
+            return $pdf->download($filename);
+
+        } catch (\Exception $e) {
+            return redirect()->route('kasir.laporan-harian')
+                ->with('error', 'Terjadi kesalahan saat mengekspor PDF: ' . $e->getMessage());
         }
     }
 }

@@ -1,17 +1,17 @@
 <?php
-// app/Http/Controllers\Kepala\DashboardController.php
+
 namespace App\Http\Controllers\Kepala;
 
 use App\Http\Controllers\Controller;
-use App\Models\KasHarian;
 use App\Models\Transaksi;
-use App\Models\TransaksiItem;
-use App\Models\Pengeluaran;
+use App\Models\KasHarian;
 use App\Models\Produk;
+use App\Models\Stok;
 use App\Models\User;
+use App\Models\TransaksiItem;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class DashboardController extends Controller
 {
@@ -20,304 +20,257 @@ class DashboardController extends Controller
      */
     public function dashboard()
     {
+        // Pastikan hanya kepala yang bisa akses
+        if (!auth()->user()->isKepala()) {
+            abort(403, 'Unauthorized access.');
+        }
+
         $today = Carbon::today();
-        $startOfWeek = Carbon::now()->startOfWeek();
         $startOfMonth = Carbon::now()->startOfMonth();
+        $endOfMonth = Carbon::now()->endOfMonth();
 
-        // Data kas harian
-        $kasHarian = KasHarian::where('tanggal', $today)->first();
-        $kasMingguIni = KasHarian::whereBetween('tanggal', [$startOfWeek, $today])->get();
-        $kasBulanIni = KasHarian::whereBetween('tanggal', [$startOfMonth, $today])->get();
-
-        // Statistik utama
-        $stats = $this->getDashboardStats($today, $startOfWeek, $startOfMonth);
-
-        // Performance metrics
-        $performance = $this->getPerformanceMetrics($stats);
-
-        // Data untuk charts
-        $chartData = $this->getChartData();
-
-        // Kasir aktif hari ini
-        $kasirAktif = $this->getKasirAktif();
-
-        // Produk terlaris
-        $produkTerlaris = $this->getProdukTerlaris();
-
-        // Transaksi terbaru
-        $transaksiTerbaru = Transaksi::with(['items', 'kasir'])
-            ->whereDate('tanggal_transaksi', $today)
-            ->where('status', 'Selesai')
-            ->orderBy('tanggal_transaksi', 'desc')
-            ->limit(10)
-            ->get();
-
-        // Pengeluaran besar hari ini
-        $pengeluaranBesar = Pengeluaran::whereDate('tanggal', $today)
-            ->where('jumlah', '>=', 100000) // Pengeluaran > 100k
-            ->orderBy('jumlah', 'desc')
-            ->limit(10)
-            ->get();
-
-        return view('kepala.dashboard', compact(
-            'kasHarian',
-            'stats',
-            'performance',
-            'chartData',
-            'kasirAktif',
-            'produkTerlaris',
-            'transaksiTerbaru',
-            'pengeluaranBesar',
-            'kasMingguIni',
-            'kasBulanIni'
-        ));
-    }
-
-    /**
-     * Get dashboard statistics
-     */
-    private function getDashboardStats($today, $startOfWeek, $startOfMonth)
-    {
-        return [
-            // Hari Ini
-            'transaksi_hari_ini' => Transaksi::whereDate('tanggal_transaksi', $today)
-                ->where('status', 'Selesai')->count(),
-            'penjualan_hari_ini' => Transaksi::whereDate('tanggal_transaksi', $today)
-                ->where('status', 'Selesai')->sum('total_bayar') ?? 0,
-            'produk_terjual_hari_ini' => TransaksiItem::whereHas('transaksi', function($q) use ($today) {
-                $q->whereDate('tanggal_transaksi', $today)->where('status', 'Selesai');
-            })->sum('qty') ?? 0,
-
-            // Minggu Ini
-            'transaksi_minggu_ini' => Transaksi::whereBetween('tanggal_transaksi', [$startOfWeek, $today])
-                ->where('status', 'Selesai')->count(),
-            'penjualan_minggu_ini' => Transaksi::whereBetween('tanggal_transaksi', [$startOfWeek, $today])
-                ->where('status', 'Selesai')->sum('total_bayar') ?? 0,
-
-            // Bulan Ini
-            'transaksi_bulan_ini' => Transaksi::whereBetween('tanggal_transaksi', [$startOfMonth, $today])
-                ->where('status', 'Selesai')->count(),
-            'penjualan_bulan_ini' => Transaksi::whereBetween('tanggal_transaksi', [$startOfMonth, $today])
-                ->where('status', 'Selesai')->sum('total_bayar') ?? 0,
-
-            // Stok
-            'total_produk' => Produk::where('status', 'Tersedia')->count(),
-            'stok_menipis' => Produk::where('status', 'Tersedia')
-                ->whereRaw('stok_tersedia <= stok_minimum')
-                ->where('stok_tersedia', '>', 0)->count(),
-            'stok_habis' => Produk::where('status', 'Tersedia')
-                ->where('stok_tersedia', 0)->count(),
-
-            // Kas
-            'kas_hari_ini' => KasHarian::where('tanggal', $today)->sum('saldo_akhir') ?? 0,
-            'pengeluaran_hari_ini' => Pengeluaran::whereDate('tanggal', $today)->sum('jumlah') ?? 0,
+        // Data Statistik Utama
+        $data = [
+            // Penjualan Hari Ini
+            'penjualan_hari_ini' => Transaksi::whereDate('tanggal_transaksi', $today)->sum('total_bayar'),
+            'total_transaksi_hari_ini' => Transaksi::whereDate('tanggal_transaksi', $today)->count(),
+            'rata_rata_transaksi' => Transaksi::whereDate('tanggal_transaksi', $today)->avg('total_bayar') ?? 0,
+            
+            // Penjualan Bulan Ini
+            'penjualan_bulan_ini' => Transaksi::whereBetween('tanggal_transaksi', [$startOfMonth, $endOfMonth])->sum('total_bayar'),
+            'total_transaksi_bulan_ini' => Transaksi::whereBetween('tanggal_transaksi', [$startOfMonth, $endOfMonth])->count(),
+            
+            // Statistik Stok
+            'stok_menipis' => Produk::whereRaw('stok_tersedia <= stok_minimum')->count(),
+            'total_produk' => Produk::count(),
+            'produk_habis' => Produk::where('stok_tersedia', 0)->count(),
+            'total_supplier' => \App\Models\Supplier::count(),
+            
+            // Kas Harian
+            'kas_hari_ini' => KasHarian::whereDate('tanggal', $today)->first(),
+            'status_kas' => KasHarian::whereDate('tanggal', $today)->value('status') ?? 'Belum Dibuka',
+            
+            // Produk Terlaris Hari Ini
+            'produk_terlaris_hari_ini' => $this->getProdukTerlaris($today, $today, 5),
+            
+            // Transaksi Terbaru
+            'transaksi_terbaru' => Transaksi::with('kasir')
+                ->whereDate('tanggal_transaksi', $today)
+                ->orderBy('tanggal_transaksi', 'desc')
+                ->limit(5)
+                ->get(),
         ];
+
+        return view('kepala.dashboard', $data);
     }
 
     /**
-     * Get performance metrics
-     */
-    private function getPerformanceMetrics($stats)
-    {
-        return [
-            'rata_transaksi_hari' => $stats['transaksi_hari_ini'] > 0 ? 
-                $stats['penjualan_hari_ini'] / $stats['transaksi_hari_ini'] : 0,
-            'growth_minggu' => $this->calculateGrowth($stats['penjualan_minggu_ini'], 'week'),
-            'growth_bulan' => $this->calculateGrowth($stats['penjualan_bulan_ini'], 'month'),
-            'konversi_stok' => $stats['total_produk'] > 0 ? 
-                ($stats['stok_menipis'] / $stats['total_produk']) * 100 : 0,
-            'profit_margin' => $this->calculateProfitMargin($stats),
-        ];
-    }
-
-    /**
-     * Calculate growth percentage
-     */
-    private function calculateGrowth($current, $period)
-    {
-        $previous = 0;
-        
-        if ($period === 'week') {
-            $lastWeekStart = Carbon::now()->subWeek()->startOfWeek();
-            $lastWeekEnd = Carbon::now()->subWeek()->endOfWeek();
-            $previous = Transaksi::whereBetween('tanggal_transaksi', [$lastWeekStart, $lastWeekEnd])
-                ->where('status', 'Selesai')->sum('total_bayar') ?? 0;
-        } else {
-            $lastMonthStart = Carbon::now()->subMonth()->startOfMonth();
-            $lastMonthEnd = Carbon::now()->subMonth()->endOfMonth();
-            $previous = Transaksi::whereBetween('tanggal_transaksi', [$lastMonthStart, $lastMonthEnd])
-                ->where('status', 'Selesai')->sum('total_bayar') ?? 0;
-        }
-
-        if ($previous == 0) return 100; // Jika tidak ada data sebelumnya
-        return (($current - $previous) / $previous) * 100;
-    }
-
-    /**
-     * Calculate profit margin (simplified)
-     */
-    private function calculateProfitMargin($stats)
-    {
-        $revenue = $stats['penjualan_hari_ini'];
-        $cogs = $revenue * 0.7; // Asumsi COGS 70%
-        $profit = $revenue - $cogs;
-        
-        return $revenue > 0 ? ($profit / $revenue) * 100 : 0;
-    }
-
-    /**
-     * Get chart data for dashboard
-     */
-    private function getChartData()
-    {
-        $data = [];
-        
-        // Sales last 7 days
-        for ($i = 6; $i >= 0; $i--) {
-            $date = Carbon::now()->subDays($i);
-            $sales = Transaksi::whereDate('tanggal_transaksi', $date)
-                ->where('status', 'Selesai')
-                ->sum('total_bayar') ?? 0;
-                
-            $data['sales_7_days']['labels'][] = $date->format('D');
-            $data['sales_7_days']['data'][] = $sales;
-        }
-
-        // Top categories (example)
-        $categories = TransaksiItem::select('nama_produk', DB::raw('SUM(qty) as total'))
-            ->whereHas('transaksi', function($q) {
-                $q->where('status', 'Selesai')
-                  ->whereDate('tanggal_transaksi', '>=', Carbon::now()->subWeek());
-            })
-            ->groupBy('nama_produk')
-            ->orderBy('total', 'desc')
-            ->limit(5)
-            ->get();
-
-        foreach ($categories as $item) {
-            $data['top_products']['labels'][] = $item->nama_produk;
-            $data['top_products']['data'][] = $item->total;
-        }
-
-        return $data;
-    }
-
-    /**
-     * Get active kasir today
-     */
-    private function getKasirAktif()
-    {
-        return User::where('role', 'Kasir')
-            ->whereHas('transaksi', function($q) {
-                $q->whereDate('tanggal_transaksi', today())
-                  ->where('status', 'Selesai');
-            })
-            ->withCount(['transaksi' => function($q) {
-                $q->whereDate('tanggal_transaksi', today())
-                  ->where('status', 'Selesai');
-            }])
-            ->withSum(['transaksi' => function($q) {
-                $q->whereDate('tanggal_transaksi', today())
-                  ->where('status', 'Selesai');
-            }], 'total_bayar')
-            ->orderBy('transaksi_sum_total_bayar', 'desc')
-            ->get();
-    }
-
-    /**
-     * Get top selling products
-     */
-    private function getProdukTerlaris()
-    {
-        return TransaksiItem::select(
-                'produk_id',
-                'nama_produk',
-                DB::raw('SUM(qty) as total_terjual'),
-                DB::raw('SUM(subtotal) as total_pendapatan')
-            )
-            ->whereHas('transaksi', function($q) {
-                $q->where('status', 'Selesai')
-                  ->whereDate('tanggal_transaksi', '>=', Carbon::now()->subWeek());
-            })
-            ->groupBy('produk_id', 'nama_produk')
-            ->orderBy('total_terjual', 'desc')
-            ->limit(10)
-            ->get();
-    }
-
-    /**
-     * Get dashboard data for AJAX
+     * API Data untuk chart dashboard
      */
     public function getDashboardData(Request $request)
     {
-        $today = Carbon::today();
-        $stats = $this->getDashboardStats($today, 
-            Carbon::now()->startOfWeek(), 
-            Carbon::now()->startOfMonth()
-        );
+        if (!auth()->user()->isKepala()) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
 
-        return response()->json([
-            'success' => true,
-            'stats' => $stats,
-            'performance' => $this->getPerformanceMetrics($stats),
-            'last_updated' => now()->format('H:i:s')
-        ]);
+        $period = $request->get('period', 'week'); // week, month, year
+        
+        $data = [
+            'penjualan' => $this->getPenjualanChartData($period),
+            'produk_terlaris' => $this->getProdukTerlarisChartData($period),
+            'metode_pembayaran' => $this->getMetodePembayaranData($period),
+        ];
+
+        return response()->json($data);
     }
 
     /**
-     * Get kas harian report
+     * Laporan Kas
      */
-    public function laporanKas()
+    public function laporanKas(Request $request)
     {
-        $startDate = request('start_date', Carbon::now()->startOfMonth()->format('Y-m-d'));
-        $endDate = request('end_date', Carbon::now()->format('Y-m-d'));
+        $startDate = $request->get('start_date', Carbon::now()->startOfMonth()->format('Y-m-d'));
+        $endDate = $request->get('end_date', Carbon::now()->endOfMonth()->format('Y-m-d'));
 
-        $kasHarian = KasHarian::with('user')
+        $kas = KasHarian::with('user')
             ->whereBetween('tanggal', [$startDate, $endDate])
             ->orderBy('tanggal', 'desc')
-            ->get();
+            ->paginate(20);
 
         $summary = [
-            'total_saldo_awal' => $kasHarian->sum('saldo_awal'),
-            'total_penerimaan_tunai' => $kasHarian->sum('penerimaan_tunai'),
-            'total_penerimaan_non_tunai' => $kasHarian->sum('penerimaan_non_tunai'),
-            'total_pengeluaran' => $kasHarian->sum('pengeluaran'),
-            'total_saldo_akhir' => $kasHarian->sum('saldo_akhir'),
+            'total_penerimaan' => $kas->sum('total_penerimaan'),
+            'total_pengeluaran' => $kas->sum('pengeluaran'),
+            'saldo_akhir_rata' => $kas->avg('saldo_akhir'),
         ];
 
-        return view('kepala.laporan-kas', compact('kasHarian', 'summary', 'startDate', 'endDate'));
+        return view('kepala.laporan.kas', compact('kas', 'summary', 'startDate', 'endDate'));
     }
 
     /**
-     * Get sales report
+     * Laporan Penjualan
      */
-    public function laporanPenjualan()
+    public function laporanPenjualan(Request $request)
     {
-        $startDate = request('start_date', Carbon::now()->startOfMonth()->format('Y-m-d'));
-        $endDate = request('end_date', Carbon::now()->format('Y-m-d'));
+        $startDate = $request->get('start_date', Carbon::now()->startOfMonth()->format('Y-m-d'));
+        $endDate = $request->get('end_date', Carbon::now()->endOfMonth()->format('Y-m-d'));
 
-        $transaksi = Transaksi::with(['items', 'kasir'])
+        $transaksi = Transaksi::with('kasir')
             ->whereBetween('tanggal_transaksi', [$startDate, $endDate])
-            ->where('status', 'Selesai')
             ->orderBy('tanggal_transaksi', 'desc')
-            ->get();
+            ->paginate(20);
 
         $summary = [
-            'total_transaksi' => $transaksi->count(),
             'total_penjualan' => $transaksi->sum('total_bayar'),
-            'rata_rata_transaksi' => $transaksi->avg('total_bayar'),
-            'total_item_terjual' => $transaksi->sum('total_item'),
+            'total_transaksi' => $transaksi->total(),
+            'rata_rata' => $transaksi->avg('total_bayar') ?? 0,
+            'total_item' => TransaksiItem::whereHas('transaksi', function($query) use ($startDate, $endDate) {
+                $query->whereBetween('tanggal_transaksi', [$startDate, $endDate]);
+            })->sum('qty'),
         ];
 
-        // Group by metode pembayaran
-        $metodePembayaran = $transaksi->groupBy('metode_pembayaran')->map(function($group, $metode) {
-            return [
-                'metode' => $metode,
-                'total' => $group->count(),
-                'jumlah' => $group->sum('total_bayar')
-            ];
-        })->values();
+        return view('kepala.laporan.penjualan', compact('transaksi', 'summary', 'startDate', 'endDate'));
+    }
 
-        return view('kepala.laporan-penjualan', compact('transaksi', 'summary', 'metodePembayaran', 'startDate', 'endDate'));
+    /**
+     * Data Chart Penjualan
+     */
+    private function getPenjualanChartData($period)
+    {
+        $data = [];
+        $labels = [];
+
+        if ($period === 'week') {
+            // Data 7 hari terakhir
+            for ($i = 6; $i >= 0; $i--) {
+                $date = Carbon::now()->subDays($i);
+                $labels[] = $date->format('D');
+                
+                $total = Transaksi::whereDate('tanggal_transaksi', $date)
+                    ->sum('total_bayar');
+                $data[] = $total ?? 0;
+            }
+        } elseif ($period === 'month') {
+            // Data 30 hari terakhir
+            for ($i = 29; $i >= 0; $i--) {
+                $date = Carbon::now()->subDays($i);
+                $labels[] = $date->format('d M');
+                
+                $total = Transaksi::whereDate('tanggal_transaksi', $date)
+                    ->sum('total_bayar');
+                $data[] = $total ?? 0;
+            }
+        } else { // year
+            // Data 12 bulan terakhir
+            for ($i = 11; $i >= 0; $i--) {
+                $date = Carbon::now()->subMonths($i);
+                $labels[] = $date->format('M Y');
+                
+                $total = Transaksi::whereYear('tanggal_transaksi', $date->year)
+                    ->whereMonth('tanggal_transaksi', $date->month)
+                    ->sum('total_bayar');
+                $data[] = $total ?? 0;
+            }
+        }
+
+        return [
+            'labels' => $labels,
+            'datasets' => [
+                [
+                    'label' => 'Total Penjualan',
+                    'data' => $data,
+                    'borderColor' => '#3b82f6',
+                    'backgroundColor' => 'rgba(59, 130, 246, 0.1)',
+                    'fill' => true
+                ]
+            ]
+        ];
+    }
+
+    /**
+     * Data Produk Terlaris untuk Chart
+     */
+    private function getProdukTerlarisChartData($period)
+    {
+        $startDate = $this->getStartDateByPeriod($period);
+        $endDate = Carbon::now();
+
+        $produkTerlaris = TransaksiItem::select(
+                'nama_produk',
+                DB::raw('SUM(qty) as total_terjual'),
+                DB::raw('SUM(subtotal) as total_penjualan')
+            )
+            ->whereHas('transaksi', function($query) use ($startDate, $endDate) {
+                $query->whereBetween('tanggal_transaksi', [$startDate, $endDate]);
+            })
+            ->groupBy('nama_produk')
+            ->orderBy('total_terjual', 'desc')
+            ->limit(10)
+            ->get();
+
+        return [
+            'labels' => $produkTerlaris->pluck('nama_produk'),
+            'data' => $produkTerlaris->pluck('total_terjual'),
+            'penjualan' => $produkTerlaris->pluck('total_penjualan')
+        ];
+    }
+
+    /**
+     * Data Metode Pembayaran
+     */
+    private function getMetodePembayaranData($period)
+    {
+        $startDate = $this->getStartDateByPeriod($period);
+        $endDate = Carbon::now();
+
+        $metodePembayaran = Transaksi::select(
+                'metode_pembayaran',
+                DB::raw('COUNT(*) as total_transaksi'),
+                DB::raw('SUM(total_bayar) as total_penjualan')
+            )
+            ->whereBetween('tanggal_transaksi', [$startDate, $endDate])
+            ->groupBy('metode_pembayaran')
+            ->get();
+
+        return [
+            'labels' => $metodePembayaran->pluck('metode_pembayaran'),
+            'data' => $metodePembayaran->pluck('total_transaksi'),
+            'penjualan' => $metodePembayaran->pluck('total_penjualan')
+        ];
+    }
+
+    /**
+     * Helper: Get produk terlaris
+     */
+    private function getProdukTerlaris($startDate, $endDate, $limit = 5)
+    {
+        return TransaksiItem::select(
+                'nama_produk',
+                DB::raw('SUM(qty) as total_terjual'),
+                DB::raw('SUM(subtotal) as total_penjualan')
+            )
+            ->whereHas('transaksi', function($query) use ($startDate, $endDate) {
+                $query->whereBetween('tanggal_transaksi', [$startDate, $endDate]);
+            })
+            ->groupBy('nama_produk')
+            ->orderBy('total_terjual', 'desc')
+            ->limit($limit)
+            ->get();
+    }
+
+    /**
+     * Helper: Get start date berdasarkan period
+     */
+    private function getStartDateByPeriod($period)
+    {
+        switch ($period) {
+            case 'week':
+                return Carbon::now()->subWeek();
+            case 'month':
+                return Carbon::now()->subMonth();
+            case 'year':
+                return Carbon::now()->subYear();
+            default:
+                return Carbon::now()->subWeek();
+        }
     }
 }

@@ -17,15 +17,16 @@
                 {{ \Carbon\Carbon::now()->translatedFormat('l, d F Y') }}
             </p>
         </div>
+        <!-- Ganti bagian tombol ini: -->
         <div class="flex flex-wrap gap-3">
-            <button onclick="window.print()" 
-                    class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition font-semibold flex items-center">
-                <i class="fas fa-print mr-2"></i>
-                Print Halaman
-            </button>
-            
-            <a href="{{ route('kasir.dashboard') }}" 
-               class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition font-semibold flex items-center">
+            <a href="{{ route('kasir.export-laporan-harian') }}?tanggal={{ request('tanggal', \Carbon\Carbon::today()->format('Y-m-d')) }}"
+                class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition font-semibold flex items-center">
+                <i class="fas fa-file-pdf mr-2"></i>
+                Export PDF
+            </a>
+
+            <a href="{{ route('kasir.dashboard') }}"
+                class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition font-semibold flex items-center">
                 <i class="fas fa-arrow-left mr-2"></i>
                 Kembali
             </a>
@@ -103,13 +104,13 @@
                         <div class="flex items-center">
                             <div class="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center mr-4">
                                 @if($metode->metode_pembayaran == 'Tunai')
-                                    <i class="fas fa-money-bill-wave text-green-500"></i>
+                                <i class="fas fa-money-bill-wave text-green-500"></i>
                                 @elseif($metode->metode_pembayaran == 'Debit')
-                                    <i class="fas fa-credit-card text-blue-500"></i>
+                                <i class="fas fa-credit-card text-blue-500"></i>
                                 @elseif($metode->metode_pembayaran == 'QRIS')
-                                    <i class="fas fa-qrcode text-purple-500"></i>
+                                <i class="fas fa-qrcode text-purple-500"></i>
                                 @else
-                                    <i class="fas fa-exchange-alt text-gray-500"></i>
+                                <i class="fas fa-exchange-alt text-gray-500"></i>
                                 @endif
                             </div>
                             <div>
@@ -235,9 +236,9 @@
                         <span class="text-sm text-gray-600">Transaksi Pertama</span>
                         <span class="font-semibold text-gray-800">
                             @if($transaksiHariIni->count() > 0)
-                                {{ $transaksiHariIni->last()->tanggal_transaksi->format('H:i') }}
+                            {{ $transaksiHariIni->last()->tanggal_transaksi->format('H:i') }}
                             @else
-                                -
+                            -
                             @endif
                         </span>
                     </div>
@@ -245,9 +246,9 @@
                         <span class="text-sm text-gray-600">Transaksi Terakhir</span>
                         <span class="font-semibold text-gray-800">
                             @if($transaksiHariIni->count() > 0)
-                                {{ $transaksiHariIni->first()->tanggal_transaksi->format('H:i') }}
+                            {{ $transaksiHariIni->first()->tanggal_transaksi->format('H:i') }}
                             @else
-                                -
+                            -
                             @endif
                         </span>
                     </div>
@@ -255,14 +256,14 @@
                         <span class="text-sm text-gray-600">Total Jam Operasional</span>
                         <span class="font-semibold text-gray-800">
                             @if($transaksiHariIni->count() > 1)
-                                @php
-                                    $first = $transaksiHariIni->last()->tanggal_transaksi;
-                                    $last = $transaksiHariIni->first()->tanggal_transaksi;
-                                    $diff = $last->diffInHours($first);
-                                @endphp
-                                {{ $diff }} jam
+                            @php
+                            $first = $transaksiHariIni->last()->tanggal_transaksi;
+                            $last = $transaksiHariIni->first()->tanggal_transaksi;
+                            $diff = $last->diffInHours($first);
+                            @endphp
+                            {{ $diff }} jam
                             @else
-                                -
+                            -
                             @endif
                         </span>
                     </div>
@@ -270,9 +271,9 @@
                         <span class="text-sm text-gray-600">Rata-rata Transaksi/Jam</span>
                         <span class="font-semibold text-gray-800">
                             @if($transaksiHariIni->count() > 1 && $diff > 0)
-                                {{ number_format($transaksiHariIni->count() / $diff, 1) }}
+                            {{ number_format($transaksiHariIni->count() / $diff, 1) }}
                             @else
-                                -
+                            -
                             @endif
                         </span>
                     </div>
@@ -286,18 +287,18 @@
                     Quick Actions
                 </h2>
                 <div class="space-y-3">
-                    <a href="{{ route('kasir.index') }}" 
-                       class="flex items-center p-3 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition">
+                    <a href="{{ route('kasir.index') }}"
+                        class="flex items-center p-3 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition">
                         <i class="fas fa-shopping-cart text-blue-500 mr-3"></i>
                         <span class="font-medium text-blue-700">Transaksi Baru</span>
                     </a>
-                    <a href="{{ route('kasir.riwayat') }}" 
-                       class="flex items-center p-3 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition">
+                    <a href="{{ route('kasir.riwayat') }}"
+                        class="flex items-center p-3 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition">
                         <i class="fas fa-history text-green-500 mr-3"></i>
                         <span class="font-medium text-green-700">Riwayat Transaksi</span>
                     </a>
-                    <a href="{{ route('kasir.kas-harian.index') }}" 
-                       class="flex items-center p-3 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 transition">
+                    <a href="{{ route('kasir.kas-harian.index') }}"
+                        class="flex items-center p-3 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 transition">
                         <i class="fas fa-cash-register text-purple-500 mr-3"></i>
                         <span class="font-medium text-purple-700">Kelola Kas</span>
                     </a>
@@ -309,31 +310,33 @@
 
 <!-- Print Styles -->
 <style>
-@media print {
-    .no-print {
-        display: none !important;
+    @media print {
+        .no-print {
+            display: none !important;
+        }
+
+        body {
+            background: white !important;
+            font-size: 12pt;
+        }
+
+        .bg-gray-50,
+        .bg-white {
+            background: white !important;
+            border: 1px solid #ddd !important;
+        }
+
+        .text-gray-600,
+        .text-gray-800 {
+            color: black !important;
+        }
     }
-    
-    body {
-        background: white !important;
-        font-size: 12pt;
-    }
-    
-    .bg-gray-50, .bg-white {
-        background: white !important;
-        border: 1px solid #ddd !important;
-    }
-    
-    .text-gray-600, .text-gray-800 {
-        color: black !important;
-    }
-}
 </style>
 
 <script>
-// Auto refresh data setiap 2 menit
-setInterval(() => {
-    window.location.reload();
-}, 120000);
+    // Auto refresh data setiap 2 menit
+    setInterval(() => {
+        window.location.reload();
+    }, 120000);
 </script>
 @endsection

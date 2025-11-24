@@ -128,177 +128,207 @@
     </div>
 </div>
 
+<!-- Notification Container -->
+<div id="notificationContainer" class="fixed top-4 right-4 z-50 space-y-2 max-w-sm"></div>
+
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const saldoAwalInput = document.getElementById('saldo_awal');
-        const selisihInfo = document.getElementById('selisihInfo');
-        const selisihText = document.getElementById('selisihText');
-        const saldoRekomendasi = {{ $saldoRekomendasi }};
+// ✅ DEKLARASI FUNGSI DI LEVEL GLOBAL
+window.saldoRekomendasi = {{ $saldoRekomendasi }};
 
-        // PERBAIKAN: Cek elemen sebelum digunakan
-        if (saldoAwalInput && selisihInfo && selisihText) {
-            // Hitung selisih saat input berubah
-            saldoAwalInput.addEventListener('input', function() {
-                const saldoAktual = parseFloat(this.value) || 0;
-                const selisih = saldoAktual - saldoRekomendasi;
+// ✅ FUNGSI SET SALDO
+function setSaldo(type) {
+    const input = document.getElementById('saldo_awal');
+    if (!input) {
+        console.error('❌ Input saldo_awal tidak ditemukan');
+        showNotification('Error: Input saldo tidak ditemukan', 'error');
+        return;
+    }
 
-                if (selisih !== 0) {
-                    selisihInfo.classList.remove('hidden');
-                    if (selisih > 0) {
-                        selisihText.textContent = '+Rp ' + Math.abs(selisih).toLocaleString('id-ID');
-                        selisihText.className = 'text-lg font-bold text-green-600';
-                    } else {
-                        selisihText.textContent = '-Rp ' + Math.abs(selisih).toLocaleString('id-ID');
-                        selisihText.className = 'text-lg font-bold text-red-600';
-                    }
-                } else {
-                    selisihInfo.classList.add('hidden');
-                }
-            });
-        }
+    if (type === 'rekomendasi') {
+        input.value = window.saldoRekomendasi;
+    } else {
+        input.value = '';
+        input.focus();
+    }
 
-        // Form submission
-        const bukaKasForm = document.getElementById('bukaKasForm');
-        if (bukaKasForm) {
-            bukaKasForm.addEventListener('submit', function(e) {
-                e.preventDefault();
-                bukaKas();
-            });
-        }
-    });
-
-    function setSaldo(type) {
-        const saldoRekomendasi = {{ $saldoRekomendasi }};
-        const input = document.getElementById('saldo_awal');
-
-        // PERBAIKAN: Cek elemen sebelum digunakan
-        if (!input) {
-            console.error('Input saldo_awal tidak ditemukan');
-            return;
-        }
-
-        if (type === 'rekomendasi') {
-            input.value = saldoRekomendasi;
-        } else {
-            input.value = '';
-            input.focus();
-        }
-
-        // Trigger input event untuk update selisih
+    // Trigger input event untuk update selisih
+    if (input) {
         const inputEvent = new Event('input');
         input.dispatchEvent(inputEvent);
     }
+}
 
-    function bukaKas() {
-        console.log('=== MEMULAI PROSES BUKA KAS ===');
+// ✅ FUNGSI BUKA KAS
+function bukaKas() {
+    console.log('=== MEMULAI PROSES BUKA KAS ===');
 
-        // PERBAIKAN: Gunakan optional chaining dan null checking
-        const saldoAwalInput = document.getElementById('saldo_awal');
-        const keteranganInput = document.getElementById('keterangan');
-        const submitBtn = document.getElementById('submitBtn');
-        const loadingOverlay = document.getElementById('loadingOverlay');
+    // Dapatkan semua elemen
+    const saldoAwalInput = document.getElementById('saldo_awal');
+    const keteranganInput = document.getElementById('keterangan');
+    const submitBtn = document.getElementById('submitBtn');
+    const loadingOverlay = document.getElementById('loadingOverlay');
 
-        // PERBAIKAN: Validasi semua elemen
-        if (!saldoAwalInput || !submitBtn || !loadingOverlay) {
-            console.error('Elemen yang diperlukan tidak ditemukan');
-            showNotification('Error sistem: Elemen tidak ditemukan', 'error');
-            return;
-        }
+    // Validasi elemen penting
+    if (!saldoAwalInput || !submitBtn || !loadingOverlay) {
+        console.error('❌ Elemen penting tidak ditemukan');
+        showNotification('Error sistem: Form tidak lengkap', 'error');
+        return;
+    }
 
-        const saldoAwal = saldoAwalInput.value;
-        const keterangan = keteranganInput ? keteranganInput.value : '';
+    const saldoAwal = saldoAwalInput.value;
+    const keterangan = keteranganInput ? keteranganInput.value : '';
 
-        console.log('Data form:', {
-            saldoAwal,
-            keterangan
-        });
+    // Validasi input
+    if (!saldoAwal || saldoAwal <= 0) {
+        showNotification('Saldo awal harus diisi dan lebih dari 0', 'error');
+        return;
+    }
 
-        // Validasi input
-        if (!saldoAwal || saldoAwal <= 0) {
-            showNotification('Saldo awal harus diisi dan lebih dari 0', 'error');
-            return;
-        }
+    // Disable submit button dan tampilkan loading
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Memproses...';
+    loadingOverlay.classList.remove('hidden');
 
-        // PERBAIKAN: Pastikan elemen ada sebelum memanipulasi
-        submitBtn.disabled = true;
-        if (loadingOverlay) {
-            loadingOverlay.classList.remove('hidden');
-        }
+    // Prepare form data
+    const formData = new FormData();
+    formData.append('saldo_awal', saldoAwal);
+    formData.append('keterangan', keterangan);
+    formData.append('_token', '{{ csrf_token() }}');
 
-        // Gunakan FormData untuk konsistensi
-        const formData = new FormData();
-        formData.append('saldo_awal', saldoAwal);
-        formData.append('keterangan', keterangan);
-        formData.append('_token', '{{ csrf_token() }}');
-
-        console.log('Mengirim request ke:', '{{ route("kasir.kas-harian.buka") }}');
-
-        fetch('{{ route("kasir.kas-harian.buka") }}', {
-                method: 'POST',
-                headers: {
-                    'X-CSRF-TOKEN': '{{ csrf_token() }}',
-                    'Accept': 'application/json',
-                },
-                body: formData
-            })
-            .then(response => {
-                console.log('Status Response:', response.status);
-                console.log('Response OK:', response.ok);
-
-                if (!response.ok) {
-                    // Jika response tidak ok, coba parse error message
-                    return response.json().then(errorData => {
-                        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
-                    });
-                }
-                return response.json();
-            })
-            .then(data => {
-                console.log('Response Data:', data);
-
-                if (data.success) {
-                    showNotification('✅ Kas berhasil dibuka!', 'success');
-                    
-                    // Redirect ke dashboard setelah berhasil
-                    setTimeout(() => {
-                        window.location.href = '{{ route("kasir.dashboard") }}';
-                    }, 1500);
-                } else {
-                    throw new Error(data.message || 'Gagal membuka kas');
-                }
-            })
-            .catch(error => {
-                console.error('Error Detail:', error);
-                console.error('Error Stack:', error.stack);
-                showNotification('❌ ' + error.message, 'error');
-            })
-            .finally(() => {
-                // PERBAIKAN: Pastikan elemen masih ada
-                if (submitBtn) {
-                    submitBtn.disabled = false;
-                }
-                if (loadingOverlay) {
-                    loadingOverlay.classList.add('hidden');
-                }
-                console.log('=== PROSES BUKA KAS SELESAI ===');
+    // Kirim request
+    fetch('{{ route("kasir.kas-harian.buka") }}', {
+        method: 'POST',
+        headers: {
+            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+            'Accept': 'application/json',
+        },
+        body: formData
+    })
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(errorData => {
+                throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
             });
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            showNotification('✅ Kas berhasil dibuka!', 'success');
+            setTimeout(() => {
+                window.location.href = '{{ route("kasir.dashboard") }}';
+            }, 1500);
+        } else {
+            throw new Error(data.message || 'Gagal membuka kas');
+        }
+    })
+    .catch(error => {
+        console.error('❌ Error:', error);
+        showNotification('❌ ' + error.message, 'error');
+    })
+    .finally(() => {
+        // Reset button state
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fas fa-lock-open mr-2"></i>Buka Kas';
+        }
+        // Sembunyikan loading
+        if (loadingOverlay) {
+            loadingOverlay.classList.add('hidden');
+        }
+    });
+}
+
+// ✅ FUNGSI NOTIFICATION
+function showNotification(message, type = 'success') {
+    const container = document.getElementById('notificationContainer');
+    if (!container) {
+        alert(message); // Fallback
+        return;
     }
 
-    function showNotification(message, type = 'success') {
-        // Buat notifikasi sederhana
-        const notification = document.createElement('div');
-        notification.className = `fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg text-white ${
-        type === 'success' ? 'bg-green-500' : 'bg-red-500'
-    }`;
-        notification.textContent = message;
+    const notification = document.createElement('div');
+    const icons = {
+        success: 'check-circle',
+        error: 'exclamation-triangle',
+        warning: 'exclamation-circle',
+        info: 'info-circle'
+    };
+    
+    const colors = {
+        success: 'bg-green-500 border-green-600',
+        error: 'bg-red-500 border-red-600',
+        warning: 'bg-yellow-500 border-yellow-600',
+        info: 'bg-blue-500 border-blue-600'
+    };
+    
+    notification.className = `${colors[type]} text-white p-4 rounded-lg shadow-xl transform transition-all duration-300 translate-x-full opacity-0`;
+    notification.innerHTML = `
+        <div class="flex items-center justify-between">
+            <div class="flex items-center">
+                <i class="fas fa-${icons[type]} mr-3"></i>
+                <span class="font-medium">${message}</span>
+            </div>
+            <button onclick="this.parentElement.parentElement.remove()" class="ml-4 text-white hover:text-gray-200 transition">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    `;
+    
+    container.appendChild(notification);
+    
+    // Animate in
+    setTimeout(() => {
+        notification.classList.remove('translate-x-full', 'opacity-0');
+        notification.classList.add('translate-x-0', 'opacity-100');
+    }, 10);
+    
+    // Auto remove
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.classList.add('translate-x-full', 'opacity-0');
+            setTimeout(() => notification.remove(), 300);
+        }
+    }, 4000);
+}
 
-        document.body.appendChild(notification);
+// ✅ INITIALIZATION SETELAH DOM LOADED
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('✅ Buka Kas Form Initialized');
+    
+    const saldoAwalInput = document.getElementById('saldo_awal');
+    const selisihInfo = document.getElementById('selisihInfo');
+    const selisihText = document.getElementById('selisihText');
+    const bukaKasForm = document.getElementById('bukaKasForm');
 
-        setTimeout(() => {
-            if (notification.parentNode) {
-                notification.remove();
+    // Event listener untuk input saldo
+    if (saldoAwalInput && selisihInfo && selisihText) {
+        saldoAwalInput.addEventListener('input', function() {
+            const saldoAktual = parseFloat(this.value) || 0;
+            const selisih = saldoAktual - window.saldoRekomendasi;
+
+            if (selisih !== 0) {
+                selisihInfo.classList.remove('hidden');
+                if (selisih > 0) {
+                    selisihText.textContent = '+Rp ' + Math.abs(selisih).toLocaleString('id-ID');
+                    selisihText.className = 'text-lg font-bold text-green-600';
+                } else {
+                    selisihText.textContent = '-Rp ' + Math.abs(selisih).toLocaleString('id-ID');
+                    selisihText.className = 'text-lg font-bold text-red-600';
+                }
+            } else {
+                selisihInfo.classList.add('hidden');
             }
-        }, 4000);
+        });
     }
+
+    // Form submission
+    if (bukaKasForm) {
+        bukaKasForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            bukaKas();
+        });
+    }
+});
 </script>
 @endsection

@@ -124,7 +124,7 @@
             @endif
         </div>
 
-        <!-- Keranjang Belanja -->
+        <!-- Keranjang Belanja - BAGIAN YANG DIPERBAIKI -->
         <div class="bg-white rounded-xl shadow-lg p-6">
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-xl font-bold text-gray-800">
@@ -154,42 +154,46 @@
                                     <i class="fas fa-barcode mr-1"></i>{{ $item['barcode'] }}
                                 </div>
                                 <div class="text-green-600 font-bold">
-                                    Rp {{ number_format($item['harga_jual'], 0, ',', '.') }} x {{ $item['qty'] }}
+                                    Rp {{ number_format($item['harga_jual'], 0, ',', '.') }}
                                 </div>
                             </div>
                             <div class="flex items-center space-x-2">
-                                <form method="POST" action="{{ route('kasir.update-cart-item') }}" class="update-cart-form">
+                                <!-- FORM UPDATE QUANTITY YANG DIPERBAIKI -->
+                                <form method="POST" action="{{ route('kasir.update-cart-qty') }}" class="update-cart-form flex items-center space-x-2">
                                     @csrf
                                     <input type="hidden" name="index" value="{{ $index }}">
-                                    <input type="hidden" name="action" value="decrease">
-                                    <button type="submit" class="bg-gray-200 w-8 h-8 rounded-full hover:bg-gray-300 flex items-center justify-center transition">
+                                    
+                                    <!-- Tombol Kurang -->
+                                    <button type="button" class="bg-gray-200 w-8 h-8 rounded-full hover:bg-gray-300 flex items-center justify-center transition decrease-btn">
                                         <i class="fas fa-minus text-xs"></i>
                                     </button>
-                                </form>
-                                
-                                <span class="w-12 text-center border border-gray-300 rounded py-1 font-semibold quantity-display">{{ $item['qty'] }}</span>
-                                
-                                <form method="POST" action="{{ route('kasir.update-cart-item') }}" class="update-cart-form">
-                                    @csrf
-                                    <input type="hidden" name="index" value="{{ $index }}">
-                                    <input type="hidden" name="action" value="increase">
-                                    <button type="submit" class="bg-gray-200 w-8 h-8 rounded-full hover:bg-gray-300 flex items-center justify-center transition">
+                                    
+                                    <!-- Input Quantity yang bisa diketik -->
+                                    <input type="number" 
+                                           name="qty" 
+                                           value="{{ $item['qty'] }}" 
+                                           min="1" 
+                                           max="999"
+                                           class="w-16 border border-gray-300 rounded py-1 px-2 text-center quantity-input"
+                                           data-index="{{ $index }}"
+                                           onchange="updateQuantity({{ $index }}, this.value)">
+                                    
+                                    <!-- Tombol Tambah -->
+                                    <button type="button" class="bg-gray-200 w-8 h-8 rounded-full hover:bg-gray-300 flex items-center justify-center transition increase-btn">
                                         <i class="fas fa-plus text-xs"></i>
                                     </button>
-                                </form>
-                                
-                                <form method="POST" action="{{ route('kasir.remove-from-cart') }}" class="remove-cart-form">
-                                    @csrf
-                                    <input type="hidden" name="index" value="{{ $index }}">
-                                    <button type="submit" class="text-red-500 ml-2 hover:text-red-700 transition" 
-                                            onclick="return confirm('Hapus {{ $item['nama_produk'] }} dari keranjang?')">
+                                    
+                                    <!-- Tombol Hapus -->
+                                    <button type="button" 
+                                            class="text-red-500 ml-2 hover:text-red-700 transition remove-btn"
+                                            onclick="removeItem({{ $index }}, '{{ $item['nama_produk'] }}')">
                                         <i class="fas fa-trash"></i>
                                     </button>
                                 </form>
                             </div>
                         </div>
                         <div class="text-right font-semibold mt-2 text-gray-800 border-t pt-2">
-                            Rp {{ number_format($item['subtotal'], 0, ',', '.') }}
+                            Subtotal: Rp {{ number_format($item['subtotal'], 0, ',', '.') }}
                         </div>
                     </div>
                 @empty
@@ -385,11 +389,21 @@
             transform: scale(1);
         }
     }
+
+    /* Style untuk input quantity */
+    .quantity-input {
+        -moz-appearance: textfield;
+    }
+    
+    .quantity-input::-webkit-outer-spin-button,
+    .quantity-input::-webkit-inner-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+    }
 </style>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // PERBAIKAN: Fix typo dari $total_bayan ke $total_bayar
     const totalBayar = {{ $total_bayar ?? 0 }};
     const subtotal = {{ $subtotal ?? 0 }};
     const diskon = {{ $diskon ?? 0 }};
@@ -410,6 +424,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initPaymentSection();
     setupEventListeners();
     setupFormSubmissions();
+    setupCartInteractions();
 
     function initPaymentSection() {
         updatePaymentUI();
@@ -456,6 +471,125 @@ document.addEventListener('DOMContentLoaded', function() {
                     document.getElementById('search-loading')?.classList.add('hidden');
                 }, 10000);
             });
+        });
+    }
+
+    // FUNGSI BARU: Setup interaksi keranjang
+    function setupCartInteractions() {
+        // Event delegation untuk tombol tambah/kurang
+        document.getElementById('cart-container')?.addEventListener('click', function(e) {
+            const target = e.target;
+            const cartItem = target.closest('.cart-item');
+            
+            if (!cartItem) return;
+            
+            const index = cartItem.querySelector('.quantity-input').dataset.index;
+            const quantityInput = cartItem.querySelector('.quantity-input');
+            let currentQty = parseInt(quantityInput.value);
+            
+            // Tombol tambah
+            if (target.closest('.increase-btn')) {
+                quantityInput.value = currentQty + 1;
+                updateQuantity(index, quantityInput.value);
+            }
+            
+            // Tombol kurang
+            if (target.closest('.decrease-btn')) {
+                if (currentQty > 1) {
+                    quantityInput.value = currentQty - 1;
+                    updateQuantity(index, quantityInput.value);
+                }
+            }
+        });
+        
+        // Event untuk input quantity (on change)
+        document.querySelectorAll('.quantity-input').forEach(input => {
+            input.addEventListener('change', function() {
+                const index = this.dataset.index;
+                updateQuantity(index, this.value);
+            });
+            
+            // Validasi input
+            input.addEventListener('blur', function() {
+                if (!this.value || parseInt(this.value) < 1) {
+                    this.value = 1;
+                    updateQuantity(this.dataset.index, 1);
+                }
+            });
+        });
+    }
+
+    // FUNGSI BARU: Update quantity via AJAX
+    function updateQuantity(index, newQty) {
+        if (newQty < 1) newQty = 1;
+        
+        // Tampilkan loading
+        const cartItem = document.querySelector(`.quantity-input[data-index="${index}"]`).closest('.cart-item');
+        const originalContent = cartItem.innerHTML;
+        cartItem.innerHTML = '<div class="text-center py-2"><div class="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500 mx-auto"></div><div class="text-sm text-gray-600 mt-1">Updating...</div></div>';
+        
+        // Kirim request AJAX
+        fetch('{{ route("kasir.update-cart-qty") }}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': '{{ csrf_token() }}'
+            },
+            body: JSON.stringify({
+                index: parseInt(index),
+                qty: parseInt(newQty)
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Reload halaman untuk update total
+                window.location.reload();
+            } else {
+                alert('Error: ' + data.message);
+                window.location.reload();
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Terjadi kesalahan saat update quantity');
+            window.location.reload();
+        });
+    }
+
+    // FUNGSI BARU: Hapus item
+    function removeItem(index, productName) {
+        if (!confirm(`Hapus "${productName}" dari keranjang?`)) return;
+        
+        // Tampilkan loading
+        const cartItem = document.querySelector(`.quantity-input[data-index="${index}"]`).closest('.cart-item');
+        const originalContent = cartItem.innerHTML;
+        cartItem.innerHTML = '<div class="text-center py-2"><div class="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500 mx-auto"></div><div class="text-sm text-gray-600 mt-1">Menghapus...</div></div>';
+        
+        // Kirim request AJAX
+        fetch('{{ route("kasir.remove-from-cart") }}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': '{{ csrf_token() }}'
+            },
+            body: JSON.stringify({
+                index: parseInt(index)
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                window.location.reload();
+            } else {
+                alert('Error: ' + data.message);
+                window.location.reload();
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Terjadi kesalahan saat menghapus item');
+            window.location.reload();
         });
     }
 
@@ -519,12 +653,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 5000);
     }
 
-    // Real-time cart updates (jika menggunakan AJAX nanti)
-    function updateCartSummary() {
-        // Placeholder untuk real-time updates
-        console.log('Cart summary updated');
-    }
-
     // Keyboard shortcuts
     document.addEventListener('keydown', function(e) {
         // Focus search input dengan Ctrl+K
@@ -541,11 +669,5 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 });
-
-// Global function untuk update UI setelah AJAX (jika diperlukan)
-function updateCartUI() {
-    // Diimplementasikan jika menggunakan AJAX
-    window.location.reload(); // Fallback untuk sekarang
-}
 </script>
 @endsection

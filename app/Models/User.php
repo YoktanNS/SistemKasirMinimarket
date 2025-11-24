@@ -37,4 +37,19 @@ class User extends Authenticatable
     {
         return $this->hasMany(Stok::class, 'user_id');
     }
+
+    public function isKepala()
+    {
+        return $this->role === 'Kepala';
+    }
+
+    public function isAdmin()
+    {
+    return $this->role === 'Admin'; 
+    }
+
+    public function isKasir()
+    {
+        return $this->role === 'Kasir';
+    }
 }

@@ -1,29 +1,36 @@
 <?php
-// app/Http\Controllers\Kasir\KasHarianController.php
+
 namespace App\Http\Controllers\Kasir;
 
 use App\Http\Controllers\Controller;
 use App\Models\KasHarian;
 use App\Models\Transaksi;
-use App\Models\Pengeluaran;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
-use Barryvdh\DomPDF\Facade\Pdf; // Import PDF facade
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class KasHarianController extends Controller
 {
     public function index()
     {
         $kasHarian = KasHarian::where('tanggal', today())->first();
-        
+
         if (!$kasHarian) {
-            return view('kasir.buka-kas');
+            // Hitung saldo rekomendasi sebelum menampilkan view buka-kas
+            $saldoKemarin = KasHarian::where('tanggal', '<', today())
+                ->orderBy('tanggal', 'desc')
+                ->first();
+
+            $saldoRekomendasi = $saldoKemarin ? $saldoKemarin->saldo_akhir : 0;
+
+            // ✅ PASTIKAN: Return view buka-kas dengan data yang diperlukan
+            return view('kasir.buka-kas', compact('saldoRekomendasi'));
         }
-        
-        // PERBAIKAN: Update data kas dari transaksi menggunakan method baru
+
+        // Update data kas dari transaksi
         $this->updateKasFromTransaksi($kasHarian);
-        
+
         // Data untuk dashboard
         $stats = [
             'total_transaksi' => Transaksi::whereDate('tanggal_transaksi', today())
@@ -33,67 +40,59 @@ class KasHarianController extends Controller
             'transaksi_tunai' => Transaksi::whereDate('tanggal_transaksi', today())
                 ->where('status', 'Selesai')
                 ->where('metode_pembayaran', 'Tunai')->count(),
-            'total_pengeluaran' => Pengeluaran::whereDate('tanggal', today())->sum('jumlah') ?? 0
         ];
-        
+
         $transaksiTerbaru = Transaksi::with('items')
             ->whereDate('tanggal_transaksi', today())
             ->where('status', 'Selesai')
             ->orderBy('tanggal_transaksi', 'desc')
             ->limit(10)
             ->get();
-            
-        $pengeluaranHariIni = Pengeluaran::whereDate('tanggal', today())
-            ->orderBy('created_at', 'desc')
-            ->get();
-        
+
+        // ✅ PASTIKAN: Return view dashboard dengan data yang diperlukan
         return view('kasir.dashboard', compact(
-            'kasHarian', 'stats', 'transaksiTerbaru', 'pengeluaranHariIni'
+            'kasHarian',
+            'stats',
+            'transaksiTerbaru'
         ));
     }
-    
+
     /**
-     * METHOD BARU: Update data kas dari transaksi
+     * METHOD: Update data kas dari transaksi
      */
     public function updateKasFromTransaksi($kasHarian)
     {
         $today = Carbon::today();
-        
+
         try {
             // Hitung penerimaan tunai dari transaksi tunai
             $penerimaanTunai = Transaksi::whereDate('tanggal_transaksi', $today)
                 ->where('status', 'Selesai')
                 ->where('metode_pembayaran', 'Tunai')
                 ->sum('total_bayar') ?? 0;
-                
+
             // Hitung penerimaan non-tunai dari transaksi non-tunai
             $penerimaanNonTunai = Transaksi::whereDate('tanggal_transaksi', $today)
                 ->where('status', 'Selesai')
                 ->where('metode_pembayaran', '!=', 'Tunai')
                 ->sum('total_bayar') ?? 0;
-                
-            // Hitung total pengeluaran
-            $totalPengeluaran = Pengeluaran::whereDate('tanggal', $today)
-                ->sum('jumlah') ?? 0;
-                
-            // Hitung saldo akhir (saldo awal + penerimaan tunai - pengeluaran)
-            $saldoAkhir = $kasHarian->saldo_awal + $penerimaanTunai - $totalPengeluaran;
-            
+
+            // Hitung saldo akhir (saldo awal + penerimaan tunai)
+            $saldoAkhir = $kasHarian->saldo_awal + $penerimaanTunai;
+
             // Update kas harian
             $kasHarian->update([
                 'penerimaan_tunai' => $penerimaanTunai,
                 'penerimaan_non_tunai' => $penerimaanNonTunai,
-                'pengeluaran' => $totalPengeluaran,
                 'saldo_akhir' => $saldoAkhir
             ]);
-            
         } catch (\Exception $e) {
             \Log::error('Error update kas from transaksi: ' . $e->getMessage());
         }
     }
-    
+
     /**
-     * BUKA KAS HARIAN - DIPERBAIKI: Fleksibel saldo awal
+     * BUKA KAS HARIAN
      */
     public function bukaKas(Request $request)
     {
@@ -103,7 +102,7 @@ class KasHarianController extends Controller
                 'saldo_awal' => 'required|numeric|min:0',
                 'keterangan' => 'nullable|string|max:255'
             ]);
-            
+
             // Cek apakah sudah ada kas hari ini
             $existingKas = KasHarian::where('tanggal', today())->first();
             if ($existingKas) {
@@ -112,15 +111,15 @@ class KasHarianController extends Controller
                     'message' => 'Kas untuk hari ini sudah dibuka'
                 ], 400);
             }
-            
-            // PERBAIKAN: Ambil saldo kemarin hanya sebagai referensi
+
+            // Ambil saldo kemarin hanya sebagai referensi
             $saldoKemarin = KasHarian::where('tanggal', '<', today())
                 ->orderBy('tanggal', 'desc')
                 ->first();
-            
+
             $saldoAwalKemarin = $saldoKemarin ? $saldoKemarin->saldo_akhir : 0;
             $saldoAwalHariIni = $request->saldo_awal;
-            
+
             // Buat keterangan yang informatif
             $keterangan = $request->keterangan;
             if (!$keterangan) {
@@ -145,7 +144,7 @@ class KasHarianController extends Controller
                 'user_id' => auth()->id(),
                 'keterangan' => $keterangan
             ]);
-            
+
             // Log untuk audit
             \Log::info('Kas dibuka dengan saldo fleksibel', [
                 'tanggal' => today(),
@@ -164,10 +163,9 @@ class KasHarianController extends Controller
                     'selisih' => $saldoAwalHariIni - $saldoAwalKemarin
                 ]
             ]);
-            
         } catch (\Exception $e) {
             \Log::error('Error buka kas: ' . $e->getMessage());
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Gagal membuka kas: ' . $e->getMessage()
@@ -184,7 +182,7 @@ class KasHarianController extends Controller
             DB::beginTransaction();
 
             $today = Carbon::today();
-            
+
             // Cari kas harian yang open
             $kasHarian = KasHarian::where('tanggal', $today)
                 ->where('status', 'Open')
@@ -204,23 +202,32 @@ class KasHarianController extends Controller
             // Update status kas menjadi Closed
             $kasHarian->update([
                 'status' => 'Closed',
-                'keterangan_tutup' => $request->keterangan ?? 'Kas ditutup',
+                'keterangan_tutup' => $request->keterangan ?? 'Kas ditutup secara normal',
                 'waktu_tutup' => Carbon::now()
             ]);
 
             DB::commit();
 
+            // Log aktivitas
+            \Log::info('Kas ditutup', [
+                'tanggal' => $today,
+                'saldo_akhir' => $kasHarian->saldo_akhir,
+                'user' => auth()->user()->name
+            ]);
+
             return response()->json([
                 'success' => true,
                 'message' => 'Kas berhasil ditutup',
-                'kas_harian' => $kasHarian
+                'data' => [
+                    'saldo_akhir' => $kasHarian->saldo_akhir,
+                    'waktu_tutup' => $kasHarian->waktu_tutup
+                ]
             ]);
-
         } catch (\Exception $e) {
             DB::rollBack();
-            
+
             \Log::error('Error tutup kas: ' . $e->getMessage());
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Terjadi kesalahan saat menutup kas: ' . $e->getMessage()
@@ -237,7 +244,7 @@ class KasHarianController extends Controller
         $kasHarian = KasHarian::where('tanggal', $today)->first();
 
         if ($kasHarian && $kasHarian->status === 'Open') {
-            // Update data dari transaksi menggunakan method baru
+            // Update data dari transaksi
             $this->updateKasFromTransaksi($kasHarian);
             $kasHarian->refresh(); // Reload data terbaru
         }
@@ -249,14 +256,14 @@ class KasHarianController extends Controller
     }
 
     /**
-     * Cek status kas - DIPERBAIKI: Tambah info saldo kemarin
+     * Cek status kas
      */
     public function cekStatus()
     {
         $today = Carbon::today();
         $kasHarian = KasHarian::where('tanggal', $today)->first();
 
-        // PERBAIKAN: Ambil saldo kemarin untuk referensi
+        // Ambil saldo kemarin untuk referensi
         $saldoKemarin = KasHarian::where('tanggal', '<', $today)
             ->orderBy('tanggal', 'desc')
             ->first();
@@ -270,90 +277,31 @@ class KasHarianController extends Controller
     }
 
     /**
-     * Tambah pengeluaran
-     */
-    public function tambahPengeluaran(Request $request)
-    {
-        try {
-            // Validasi input
-            $request->validate([
-                'keterangan' => 'required|string|max:255',
-                'jumlah' => 'required|numeric|min:1',
-                'kategori' => 'nullable|string|max:100'
-            ]);
-            
-            $today = Carbon::today();
-            
-            // Cek apakah kas terbuka
-            $kasHarian = KasHarian::where('tanggal', $today)
-                ->where('status', 'Open')
-                ->first();
-                
-            if (!$kasHarian) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Kas harus dibuka terlebih dahulu sebelum menambah pengeluaran'
-                ], 400);
-            }
-
-            $pengeluaran = Pengeluaran::create([
-                'tanggal' => $today,
-                'keterangan' => $request->keterangan,
-                'jumlah' => $request->jumlah,
-                'kategori' => $request->kategori ?? 'Lainnya',
-                'user_id' => auth()->id()
-            ]);
-
-            // Update kas harian setelah menambah pengeluaran
-            $this->updateKasFromTransaksi($kasHarian);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Pengeluaran berhasil ditambahkan',
-                'pengeluaran' => $pengeluaran
-            ]);
-
-        } catch (\Exception $e) {
-            \Log::error('Error tambah pengeluaran: ' . $e->getMessage());
-            
-            return response()->json([
-                'success' => false,
-                'message' => 'Gagal menambahkan pengeluaran: ' . $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
      * Laporan kas harian
      */
     public function laporan($id = null)
     {
         $tanggal = $id ? Carbon::parse($id) : Carbon::today();
-        
+
         $kasHarian = KasHarian::where('tanggal', $tanggal)->first();
-        
+
         if (!$kasHarian) {
             return response()->json([
                 'success' => false,
                 'message' => 'Tidak ada data kas untuk tanggal tersebut'
             ], 404);
         }
-        
+
         $transaksi = Transaksi::with('items')
             ->whereDate('tanggal_transaksi', $tanggal)
             ->where('status', 'Selesai')
             ->orderBy('tanggal_transaksi', 'desc')
             ->get();
-            
-        $pengeluaran = Pengeluaran::whereDate('tanggal', $tanggal)
-            ->orderBy('created_at', 'desc')
-            ->get();
 
         return response()->json([
             'success' => true,
             'kas_harian' => $kasHarian,
-            'transaksi' => $transaksi,
-            'pengeluaran' => $pengeluaran
+            'transaksi' => $transaksi
         ]);
     }
 
@@ -364,9 +312,9 @@ class KasHarianController extends Controller
     {
         try {
             $tanggal = $id ? Carbon::parse($id) : Carbon::today();
-            
+
             $kasHarian = KasHarian::where('tanggal', $tanggal)->first();
-            
+
             if (!$kasHarian) {
                 return redirect()->back()->with('error', 'Tidak ada data kas untuk tanggal tersebut');
             }
@@ -378,21 +326,16 @@ class KasHarianController extends Controller
                 ->orderBy('tanggal_transaksi', 'desc')
                 ->get();
 
-            // Ambil data pengeluaran
-            $pengeluaran = Pengeluaran::whereDate('tanggal', $tanggal)
-                ->orderBy('created_at', 'desc')
-                ->get();
-
             // Hitung statistik
             $totalTransaksi = $transaksi->count();
             $totalPenjualan = $transaksi->sum('total_bayar');
-            $totalItemTerjual = $transaksi->sum(function($trx) {
+            $totalItemTerjual = $transaksi->sum(function ($trx) {
                 return $trx->items->sum('jumlah');
             });
             $rataRataTransaksi = $totalTransaksi > 0 ? $totalPenjualan / $totalTransaksi : 0;
 
             // Hitung metode pembayaran
-            $metodePembayaran = $transaksi->groupBy('metode_pembayaran')->map(function($group, $metode) {
+            $metodePembayaran = $transaksi->groupBy('metode_pembayaran')->map(function ($group, $metode) {
                 return (object) [
                     'metode_pembayaran' => $metode,
                     'total' => $group->count(),
@@ -406,7 +349,6 @@ class KasHarianController extends Controller
             $data = [
                 'kasHarian' => $kasHarian,
                 'transaksi' => $transaksi,
-                'pengeluaran' => $pengeluaran,
                 'tanggalLaporan' => Carbon::parse($tanggal)->translatedFormat('l, d F Y'),
                 'totalTransaksi' => $totalTransaksi,
                 'totalPenjualan' => $totalPenjualan,
@@ -418,9 +360,8 @@ class KasHarianController extends Controller
 
             // Generate PDF dengan DomPDF
             $pdf = Pdf::loadView('kasir.laporan.cetak-laporan-harian', $data);
-            
-            return $pdf->download('laporan-kas-' . $tanggal->format('Y-m-d') . '.pdf');
 
+            return $pdf->download('laporan-kas-' . $tanggal->format('Y-m-d') . '.pdf');
         } catch (\Exception $e) {
             \Log::error('Error cetak laporan: ' . $e->getMessage());
             return redirect()->back()->with('error', 'Gagal mencetak laporan: ' . $e->getMessage());
@@ -435,19 +376,18 @@ class KasHarianController extends Controller
         try {
             $today = Carbon::today();
             $kasHarian = KasHarian::where('tanggal', $today)->first();
-            
+
             if ($kasHarian) {
                 $kasHarian->delete();
             }
-            
+
             return response()->json([
                 'success' => true,
                 'message' => 'Kas hari ini berhasil direset'
             ]);
-            
         } catch (\Exception $e) {
             \Log::error('Error reset kas: ' . $e->getMessage());
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Gagal reset kas: ' . $e->getMessage()

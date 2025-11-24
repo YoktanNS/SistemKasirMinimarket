@@ -1,4 +1,4 @@
-@extends('layouts.app')
+@extends('layouts.app') 
 
 @section('title', 'Data Supplier')
 @section('page_title', 'Manajemen Supplier')
@@ -34,7 +34,6 @@
                 <th class="px-4 py-3 text-left">Kontak</th>
                 <th class="px-4 py-3 text-left">Email</th>
                 <th class="px-4 py-3 text-center">Status</th>
-                <th class="px-4 py-3 text-center">Total PO</th>
                 <th class="px-4 py-3 text-center">Aksi</th>
             </tr>
         </thead>
@@ -51,9 +50,6 @@
                             {{ $supplier->status }}
                         </span>
                     </td>
-                    <td class="px-4 py-3 text-center text-blue-700 font-semibold">
-                        {{ $supplier->purchase_orders_count ?? 0 }}
-                    </td>
                     <td class="px-4 py-3 text-center">
                         <div class="flex justify-center gap-3">
                             <a href="{{ route('admin.supplier.show', $supplier->supplier_id) }}"
@@ -67,7 +63,7 @@
                 </tr>
             @empty
                 <tr>
-                    <td colspan="7" class="text-center py-5 text-gray-500">Belum ada data supplier.</td>
+                    <td colspan="6" class="text-center py-5 text-gray-500">Belum ada data supplier.</td>
                 </tr>
             @endforelse
         </tbody>

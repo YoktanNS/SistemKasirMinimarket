@@ -7,9 +7,10 @@ use App\Http\Controllers\Kasir\DashboardController;
 use App\Http\Controllers\Kasir\RiwayatController;
 use App\Http\Controllers\Kasir\KasHarianController;
 use App\Http\Controllers\Kasir\TransaksiItemController;
-use App\Http\Controllers\Kasir\PengeluaranController;
 use App\Http\Controllers\Admin\LaporanController;
 use App\Http\Controllers\Admin\ArsipController;
+use App\Http\Controllers\Kepala\KepalaController;
+
 
 /*
 |--------------------------------------------------------------------------
@@ -116,8 +117,31 @@ Route::prefix('kasir')->name('kasir.')->middleware(['auth', 'role:Kasir'])->grou
         Route::get('/statistik', [DashboardController::class, 'getStatistik'])->name('statistik');
         Route::get('/laporan-harian', [DashboardController::class, 'laporanHarian'])->name('laporan-harian');
         Route::get('/cek-status-kas', [DashboardController::class, 'cekStatusKas'])->name('cek-status-kas');
-        Route::get('/data', [DashboardController::class, 'getDashboardData'])->name('data'); // TAMBAHAN
-        // HAPUS: Route::post('/buka-kas', [DashboardController::class, 'bukaKasFromDashboard'])->name('buka-kas');
+        Route::get('/data', [DashboardController::class, 'getDashboardData'])->name('data');
+    });
+
+    // ==================== KAS HARIAN ROUTES - DIATAS PRODUK UNTUK HINDARI KONFLIK ====================
+    Route::prefix('kas-harian')->name('kas-harian.')->group(function () {
+        // Main Routes - BUKA KAS VIEW
+        Route::get('/', [KasHarianController::class, 'index'])->name('index');
+        
+        // ✅ ROUTE BUKA KAS: Action untuk membuka kas
+        Route::post('/buka', [KasHarianController::class, 'bukaKas'])->name('buka');
+        
+        // ✅ ROUTE TUTUP KAS: Action untuk menutup kas
+        Route::post('/tutup', [KasHarianController::class, 'tutupKas'])->name('tutup');
+        
+        // API Routes
+        Route::get('/status', [KasHarianController::class, 'cekStatus'])->name('status');
+        Route::get('/refresh', [KasHarianController::class, 'refresh'])->name('refresh');
+        Route::get('/laporan/{id?}', [KasHarianController::class, 'laporan'])->name('laporan');
+        
+        // CETAK LAPORAN
+        Route::get('/cetak-laporan/{id?}', [KasHarianController::class, 'cetakLaporanHarian'])->name('cetak-laporan');
+        
+        // Reset (untuk development)
+        Route::post('/reset-hari-ini', [KasHarianController::class, 'resetKasHariIni'])->name('reset-hari-ini');
+        
     });
 
     // Produk Management (Read-Only)
@@ -126,6 +150,9 @@ Route::prefix('kasir')->name('kasir.')->middleware(['auth', 'role:Kasir'])->grou
         Route::get('/low-stock-alert', [KasirController::class, 'getLowStockAlert'])->name('low-stock-alert');
         Route::get('/detail/{id}', [KasirController::class, 'getProductDetail'])->name('product-detail');
         Route::get('/suggested', [KasirController::class, 'getSuggestedProducts'])->name('suggested-products');
+        Route::get('/image-check/{id}', [KasirController::class, 'checkProductImage'])->name('product-image-check');
+        Route::get('/with-images', [KasirController::class, 'getProductsWithImages'])->name('products-with-images');
+        Route::post('/quick-add-from-list', [KasirController::class, 'quickAddToCartFromList'])->name('quick-add-from-list');
     });
 
     // Cart Management
@@ -158,6 +185,9 @@ Route::prefix('kasir')->name('kasir.')->middleware(['auth', 'role:Kasir'])->grou
         Route::get('/cetak-struk/{id}', [KasirController::class, 'cetakStruk'])->name('cetak-struk');
     });
 
+     // ROUTE BARU YANG DITAMBAHKAN
+    Route::post('/update-cart-qty', [KasirController::class, 'updateCartQty'])->name('update-cart-qty');
+
     // Riwayat Transaksi
     Route::prefix('riwayat')->group(function () {
         Route::get('/', [RiwayatController::class, 'index'])->name('riwayat');
@@ -165,39 +195,8 @@ Route::prefix('kasir')->name('kasir.')->middleware(['auth', 'role:Kasir'])->grou
         Route::get('/{id}/detail', [RiwayatController::class, 'getTransaksiDetail'])->name('riwayat.detail');
         Route::post('/batalkan/{id}', [RiwayatController::class, 'batalkanTransaksi'])->name('riwayat.batalkan');
         Route::post('/export', [RiwayatController::class, 'export'])->name('riwayat.export');
-
-        // Hapus Transaksi
         Route::delete('/hapus/{id}', [RiwayatController::class, 'hapusTransaksi'])->name('riwayat.hapus');
         Route::post('/hapus-multiple', [RiwayatController::class, 'hapusMultipleTransaksi'])->name('riwayat.hapus-multiple');
-    });
-
-    // ==================== KAS HARIAN ROUTES ====================
-    Route::prefix('kas-harian')->name('kas-harian.')->group(function () {
-        // Main Routes - BUKA KAS VIEW
-        Route::get('/', [KasHarianController::class, 'index'])->name('index');
-
-        // ✅ PERBAIKAN: Route buka kas yang benar
-        Route::post('/buka', [KasHarianController::class, 'bukaKas'])->name('buka'); // nama route: kasir.kas-harian.buka
-
-        Route::get('/laporan/{id?}', [KasHarianController::class, 'laporan'])->name('laporan');
-
-        // CETAK LAPORAN
-        Route::get('/cetak-laporan/{id?}', [KasHarianController::class, 'cetakLaporanHarian'])
-            ->name('cetak-laporan');
-
-        // Aksi Kas
-        Route::post('/tutup', [KasHarianController::class, 'tutupKas'])->name('tutup');
-
-        // Transaksi dalam Kas
-        Route::post('/pengeluaran', [KasHarianController::class, 'tambahPengeluaran'])->name('pengeluaran.tambah');
-
-        // API
-        Route::get('/status', [KasHarianController::class, 'cekStatus'])->name('status');
-        Route::get('/refresh', [KasHarianController::class, 'refresh'])->name('refresh');
-
-        // Detail & Reset
-        Route::get('/{id}', [KasHarianController::class, 'show'])->name('show');
-        Route::post('/reset-hari-ini', [KasHarianController::class, 'resetKasHariIni'])->name('reset-hari-ini');
     });
 
     // ==================== ANALYTICS ROUTES ====================
@@ -215,52 +214,8 @@ Route::prefix('kasir')->name('kasir.')->middleware(['auth', 'role:Kasir'])->grou
         Route::get('/database', [KasirController::class, 'testDatabase'])->name('database');
     });
 
-    // ==================== PRODUCT IMAGE ROUTES ====================
-    Route::prefix('produk')->group(function () {
-        Route::get('/daftar', [KasirController::class, 'daftarProduk'])->name('daftar-produk');
-        Route::get('/low-stock-alert', [KasirController::class, 'getLowStockAlert'])->name('low-stock-alert');
-        Route::get('/detail/{id}', [KasirController::class, 'getProductDetail'])->name('product-detail');
-        Route::get('/suggested', [KasirController::class, 'getSuggestedProducts'])->name('suggested-products');
-
-        // ✅ TAMBAHAN ROUTES UNTUK GAMBAR
-        Route::get('/image-check/{id}', [KasirController::class, 'checkProductImage'])->name('product-image-check');
-        Route::get('/with-images', [KasirController::class, 'getProductsWithImages'])->name('products-with-images');
-        Route::post('/quick-add-from-list', [KasirController::class, 'quickAddToCartFromList'])->name('quick-add-from-list');
-    });
-
-    // ==================== PENGELUARAN ROUTES ====================
-    // Tambahkan route ini di web.php dalam group kasir
-
-    Route::prefix('pengeluaran')->name('pengeluaran.')->group(function () {
-        Route::get('/', [PengeluaranController::class, 'index'])->name('index');
-        Route::get('/create', [PengeluaranController::class, 'create'])->name('create');
-        Route::post('/', [PengeluaranController::class, 'store'])->name('store');
-        Route::get('/{id}', [PengeluaranController::class, 'show'])->name('show');
-        Route::delete('/pengeluaran/{id}', [PengeluaranController::class, 'destroy'])->name('destroy');
-        Route::get('/laporan', [PengeluaranController::class, 'laporan'])->name('laporan');
-    });
-
-    // ==================== ROUTES KOMPATIBILITAS ====================
-    Route::post('/quick-search', [KasirController::class, 'quickSearch'])->name('quick-search');
-    Route::post('/add-to-cart', [KasirController::class, 'addToCart'])->name('add-to-cart');
-    Route::post('/quick-add-to-cart', [KasirController::class, 'quickAddToCart'])->name('quick-add-to-cart');
-    Route::post('/update-cart-item', [KasirController::class, 'updateCartItem'])->name('update-cart-item');
-    Route::post('/remove-from-cart', [KasirController::class, 'removeFromCart'])->name('remove-from-cart');
-    Route::post('/apply-diskon', [KasirController::class, 'applyDiskon'])->name('apply-diskon');
-    Route::post('/apply-diskon-persen', [KasirController::class, 'applyDiskonPersen'])->name('apply-diskon-persen');
-    Route::get('/reset-transaksi', [KasirController::class, 'resetTransaksi'])->name('reset-transaksi');
-    Route::post('/proses-transaksi', [KasirController::class, 'prosesTransaksi'])->name('proses-transaksi');
-    Route::get('/cetak-struk/{id}', [KasirController::class, 'cetakStruk'])->name('cetak-struk');
-    Route::get('/clear-search', [KasirController::class, 'clearSearchResults'])->name('clear-search');
-    Route::get('/cart-summary', [KasirController::class, 'getCartSummary'])->name('cart-summary');
-    Route::get('/validate-stock', [KasirController::class, 'validateStock'])->name('validate-stock');
-    Route::get('/suggested-products', [KasirController::class, 'getSuggestedProducts'])->name('suggested-products');
-    Route::post('/bulk-add-to-cart', [KasirController::class, 'bulkAddToCart'])->name('bulk-add-to-cart');
-
-    // Kompatibilitas kas - PERBAIKI INI
-    // HAPUS: Route::post('/buka-kas', [KasHarianController::class, 'bukaKas'])->name('buka-kas');
-    Route::post('/tutup-kas/{id}', [KasHarianController::class, 'tutupKas'])->name('tutup-kas');
-    Route::post('/kas-harian/reset-hari-ini', [KasHarianController::class, 'resetKasHariIni'])->name('kas-harian.reset-hari-ini');
+    Route::get('/laporan-harian/export', [KasirController::class, 'exportLaporanHarian'])
+        ->name('export-laporan-harian');
 });
 
 // ====================
@@ -268,12 +223,30 @@ Route::prefix('kasir')->name('kasir.')->middleware(['auth', 'role:Kasir'])->grou
 // ====================
 Route::prefix('kepala')->name('kepala.')->middleware(['auth', 'role:Kepala'])->group(function () {
     // Dashboard
-    Route::get('/dashboard', [DashboardController::class, 'dashboard'])->name('dashboard');
-    Route::get('/dashboard/data', [DashboardController::class, 'getDashboardData'])->name('dashboard.data');
+    Route::get('/dashboard', [KepalaController::class, 'dashboard'])->name('dashboard');
+    Route::get('/dashboard/data', [KepalaController::class, 'getDashboardData'])->name('dashboard.data');
 
     // Laporan
-    Route::get('/laporan/kas', [DashboardController::class, 'laporanKas'])->name('laporan.kas');
-    Route::get('/laporan/penjualan', [DashboardController::class, 'laporanPenjualan'])->name('laporan.penjualan');
+    Route::get('/laporan/kas', [KepalaController::class, 'laporanKas'])->name('laporan-kas');
+    Route::get('/laporan/penjualan', [KepalaController::class, 'laporanPenjualan'])->name('laporan-penjualan');
+    Route::get('/laporan/stok', [KepalaController::class, 'laporanStok'])->name('laporan-stok');
+    Route::get('/laporan/produk', [KepalaController::class, 'laporanProduk'])->name('laporan.produk');
+    
+    // Laporan Tambahan
+    Route::get('/laporan/produk-terlaris', [KepalaController::class, 'laporanProdukTerlaris'])->name('laporan.produk-terlaris');
+    
+    // Export Laporan
+    Route::get('/laporan/export-penjualan', [KepalaController::class, 'exportPenjualan'])->name('laporan.export-penjualan');
+    Route::get('/laporan/export-kas', [KepalaController::class, 'exportKas'])->name('laporan.export-kas');
+    Route::get('/laporan/export-stok', [KepalaController::class, 'exportStok'])->name('laporan.export-stok');
 
-    // Management routes bisa ditambahkan later
+    // Monitoring
+    // HAPUS: Route::get('/monitoring/transaksi', [KepalaController::class, 'monitoringTransaksi'])->name('monitoring.transaksi');
+    Route::get('/monitoring/stok-menipis', [KepalaController::class, 'stokMenipis'])->name('monitoring.stok-menipis');
+    Route::get('/monitoring/kas-harian', [KepalaController::class, 'monitoringKasHarian'])->name('monitoring.kas-harian');
+    Route::get('/monitoring/kasir', [KepalaController::class, 'monitoringKasir'])->name('monitoring.kasir');
+
+    // Detail Transaksi
+    Route::get('/transaksi/{id}/detail', [KepalaController::class, 'detailTransaksi'])->name('transaksi.detail');
+    Route::get('/transaksi/{id}/struk', [KepalaController::class, 'cetakStruk'])->name('transaksi.struk');
 });
