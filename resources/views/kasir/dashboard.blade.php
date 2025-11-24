@@ -26,11 +26,11 @@
                             <i class="fas fa-check-circle mr-2"></i>
                             STATUS: OPEN
                         </span>
-                        <button onclick="showTutupKasModal()" 
-                                class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition font-semibold flex items-center">
+                        <a href="{{ route('kasir.kas-harian.tutup-page') }}" 
+                           class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition font-semibold flex items-center">
                             <i class="fas fa-lock mr-2"></i>
                             Tutup Kas
-                        </button>
+                        </a>
                     @else
                         <span class="px-4 py-2 bg-red-100 text-red-800 rounded-full text-sm font-semibold flex items-center">
                             <i class="fas fa-lock mr-2"></i>
@@ -89,7 +89,7 @@
                         </div>
                         <span class="text-xs font-semibold text-green-600">TOTAL PENERIMAAN</span>
                     </div>
-                    <p class="text-2xl font-bold text-green-700">Rp {{ number_format($kasHarian->total_penerimaan ?? 0, 0, ',', '.') }}</p>
+                    <p class="text-2xl font-bold text-green-700">Rp {{ number_format(($kasHarian->penerimaan_tunai + $kasHarian->penerimaan_non_tunai) ?? 0, 0, ',', '.') }}</p>
                 </div>
 
                 <!-- Saldo Akhir -->
@@ -102,6 +102,14 @@
                     </div>
                     <p class="text-2xl font-bold text-indigo-700">Rp {{ number_format($kasHarian->saldo_akhir ?? 0, 0, ',', '.') }}</p>
                 </div>
+            </div>
+
+            <!-- Quick Actions Kas -->
+            <div class="flex flex-wrap gap-3 mb-4">
+                <button onclick="refreshKasData()" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition font-medium flex items-center">
+                    <i class="fas fa-sync-alt mr-2"></i>
+                    Refresh Data
+                </button>
             </div>
             @else
             <!-- Jika kas belum dibuka -->
@@ -336,6 +344,29 @@
             </div>
         </div>
         @endif
+
+        <!-- Quick Kas Actions -->
+        @if($kasHarian && $kasHarian->status == 'Open')
+        <div class="bg-white rounded-2xl shadow-lg p-6 border-l-4 border-red-500">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+                <i class="fas fa-cash-register mr-2 text-red-500"></i>
+                Kas Actions
+            </h3>
+            <div class="space-y-3">
+                <a href="{{ route('kasir.kas-harian.tutup-page') }}" 
+                   class="flex items-center p-3 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition group">
+                    <div class="bg-red-500 text-white p-2 rounded-lg mr-3 group-hover:bg-red-600 transition">
+                        <i class="fas fa-lock text-sm"></i>
+                    </div>
+                    <div class="flex-1">
+                        <p class="font-semibold text-red-800">Tutup Kas</p>
+                        <p class="text-red-600 text-xs">Akhiri operasi hari ini</p>
+                    </div>
+                    <i class="fas fa-arrow-right text-red-500 opacity-70 group-hover:opacity-100"></i>
+                </a>
+            </div>
+        </div>
+        @endif
     </div>
 </div>
 
@@ -363,6 +394,15 @@ function initializeDashboard() {
     });
     
     updatePerformanceMetrics();
+    
+    // Check for success/error messages from session
+    @if(session('success'))
+        showNotification('{{ session('success') }}', 'success');
+    @endif
+    
+    @if(session('error'))
+        showNotification('{{ session('error') }}', 'error');
+    @endif
 }
 
 function startServerTime() {
@@ -408,17 +448,60 @@ function calculateProfitMargin(stats) {
     return '100%'; // Simplified for now
 }
 
-// Placeholder functions for modal features
-function showTutupKasModal() {
-    alert('Fitur Tutup Kas akan segera tersedia');
+function refreshKasData() {
+    showLoading();
+    
+    fetch('{{ route("kasir.kas-harian.refresh") }}', {
+        method: 'GET',
+        headers: {
+            'Accept': 'application/json',
+            'X-CSRF-TOKEN': '{{ csrf_token() }}'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        hideLoading();
+        if (data.success) {
+            showNotification('Data kas berhasil di-refresh', 'success');
+            // Refresh halaman setelah 1 detik
+            setTimeout(() => {
+                window.location.reload();
+            }, 1000);
+        } else {
+            showNotification('Gagal refresh data kas', 'error');
+        }
+    })
+    .catch(error => {
+        hideLoading();
+        console.error('Error:', error);
+        showNotification('Terjadi kesalahan saat refresh data', 'error');
+    });
 }
 
+// ==================== FUNGSI LAINNYA ====================
 function showDetailModal(type) {
-    alert(`Detail ${type} akan ditampilkan di sini`);
+    // Implementasi detail modal sesuai kebutuhan
+    const titles = {
+        'saldo-awal': 'Detail Saldo Awal',
+        'penerimaan-tunai': 'Detail Penerimaan Tunai',
+        'penerimaan-non-tunai': 'Detail Penerimaan Non-Tunai',
+        'total-penerimaan': 'Detail Total Penerimaan',
+        'saldo-akhir': 'Detail Saldo Akhir',
+        'total-penjualan': 'Detail Total Penjualan',
+        'transaksi-tunai': 'Detail Transaksi Tunai',
+        'rata-rata': 'Detail Rata-rata Transaksi'
+    };
+    
+    // Bisa diganti dengan modal yang sesungguhnya
+    const message = `Detail untuk: ${titles[type] || type}\n\n` +
+                   `Fitur ini akan menampilkan detail lengkap dan breakdown data.`;
+    
+    alert(message);
 }
 
 function showTransactionDetail(transactionId) {
-    alert(`Detail transaksi ${transactionId} akan ditampilkan`);
+    // Redirect ke halaman detail transaksi atau buka modal
+    window.location.href = `{{ url('kasir/riwayat') }}/${transactionId}`;
 }
 
 function showNotification(message, type = 'success', duration = 4000) {
@@ -463,17 +546,39 @@ function showNotification(message, type = 'success', duration = 4000) {
     // Auto remove
     setTimeout(() => {
         notification.classList.add('translate-x-full', 'opacity-0');
-        setTimeout(() => notification.remove(), 300);
+        setTimeout(() => {
+            if (notification.parentElement) {
+                notification.remove();
+            }
+        }, 300);
     }, duration);
 }
 
 function showLoading() {
     document.getElementById('loadingOverlay').classList.remove('hidden');
+    document.getElementById('loadingOverlay').classList.add('flex');
 }
 
 function hideLoading() {
     document.getElementById('loadingOverlay').classList.add('hidden');
+    document.getElementById('loadingOverlay').classList.remove('flex');
 }
+
+// Auto refresh data setiap 30 detik jika kas masih open
+@if($kasHarian && $kasHarian->status == 'Open')
+setInterval(() => {
+    // Refresh data secara background
+    fetch('{{ route("kasir.kas-harian.status") }}')
+        .then(response => response.json())
+        .then(data => {
+            if (data.kas_harian) {
+                // Update data secara real-time jika diperlukan
+                console.log('Data kas updated:', data.kas_harian);
+            }
+        })
+        .catch(error => console.log('Auto-refresh error:', error));
+}, 30000); // 30 detik
+@endif
 </script>
 
 <style>
@@ -484,6 +589,40 @@ function hideLoading() {
 .hover-lift:hover {
     transform: translateY(-4px);
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+/* Custom scrollbar */
+.max-h-96::-webkit-scrollbar {
+    width: 6px;
+}
+
+.max-h-96::-webkit-scrollbar-track {
+    background: #f1f5f9;
+    border-radius: 3px;
+}
+
+.max-h-96::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 3px;
+}
+
+.max-h-96::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
+/* Smooth transitions */
+.transition {
+    transition: all 0.3s ease-in-out;
+}
+
+/* Card hover effects */
+.bg-gradient-to-br {
+    transition: all 0.3s ease;
+}
+
+.bg-gradient-to-br:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 5px 10px -5px rgba(0, 0, 0, 0.04);
 }
 </style>
 @endsection

@@ -174,68 +174,6 @@ class KasHarianController extends Controller
     }
 
     /**
-     * Tutup kas harian
-     */
-    public function tutupKas(Request $request)
-    {
-        try {
-            DB::beginTransaction();
-
-            $today = Carbon::today();
-
-            // Cari kas harian yang open
-            $kasHarian = KasHarian::where('tanggal', $today)
-                ->where('status', 'Open')
-                ->first();
-
-            if (!$kasHarian) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Tidak ada kas yang terbuka untuk hari ini'
-                ], 404);
-            }
-
-            // Update final data sebelum tutup
-            $this->updateKasFromTransaksi($kasHarian);
-            $kasHarian->refresh(); // Reload data terbaru
-
-            // Update status kas menjadi Closed
-            $kasHarian->update([
-                'status' => 'Closed',
-                'keterangan_tutup' => $request->keterangan ?? 'Kas ditutup secara normal',
-                'waktu_tutup' => Carbon::now()
-            ]);
-
-            DB::commit();
-
-            // Log aktivitas
-            \Log::info('Kas ditutup', [
-                'tanggal' => $today,
-                'saldo_akhir' => $kasHarian->saldo_akhir,
-                'user' => auth()->user()->name
-            ]);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Kas berhasil ditutup',
-                'data' => [
-                    'saldo_akhir' => $kasHarian->saldo_akhir,
-                    'waktu_tutup' => $kasHarian->waktu_tutup
-                ]
-            ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-
-            \Log::error('Error tutup kas: ' . $e->getMessage());
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Terjadi kesalahan saat menutup kas: ' . $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
      * Refresh data kas
      */
     public function refresh()
@@ -392,6 +330,87 @@ class KasHarianController extends Controller
                 'success' => false,
                 'message' => 'Gagal reset kas: ' . $e->getMessage()
             ], 500);
+        }
+    }
+
+    /**
+     * Tampilkan halaman form tutup kas
+     */
+    public function tutupKasPage()
+    {
+        $today = Carbon::today();
+        $kasHarian = KasHarian::where('tanggal', $today)
+            ->where('status', 'Open')
+            ->first();
+
+        if (!$kasHarian) {
+            return redirect()->route('kasir.dashboard')
+                ->with('error', 'Tidak ada kas yang terbuka untuk hari ini');
+        }
+
+        // Update data terbaru sebelum tampil
+        $this->updateKasFromTransaksi($kasHarian);
+        $kasHarian->refresh();
+
+        // Hitung statistik
+        $stats = [
+            'total_transaksi' => Transaksi::whereDate('tanggal_transaksi', $today)
+                ->where('status', 'Selesai')->count(),
+            'total_penjualan' => Transaksi::whereDate('tanggal_transaksi', $today)
+                ->where('status', 'Selesai')->sum('total_bayar') ?? 0,
+            'transaksi_tunai' => Transaksi::whereDate('tanggal_transaksi', $today)
+                ->where('status', 'Selesai')
+                ->where('metode_pembayaran', 'Tunai')->count(),
+            'rata_rata_transaksi' => Transaksi::whereDate('tanggal_transaksi', $today)
+                ->where('status', 'Selesai')
+                ->avg('total_bayar') ?? 0
+        ];
+
+        return view('kasir.tutup-kas', compact('kasHarian', 'stats'));
+    }
+
+    /**
+     * Proses tutup kas (update method yang sudah ada)
+     */
+    public function tutupKas(Request $request)
+    {
+        try {
+            DB::beginTransaction();
+
+            $today = Carbon::today();
+
+            $kasHarian = KasHarian::where('tanggal', $today)
+                ->where('status', 'Open')
+                ->first();
+
+            if (!$kasHarian) {
+                return redirect()->route('kasir.dashboard')
+                    ->with('error', 'Tidak ada kas yang terbuka untuk hari ini');
+            }
+
+            // Update final data sebelum tutup
+            $this->updateKasFromTransaksi($kasHarian);
+            $kasHarian->refresh();
+
+            // Update status kas menjadi Closed
+            $kasHarian->update([
+                'status' => 'Closed',
+                'keterangan_tutup' => $request->keterangan ?? 'Kas ditutup secara normal',
+                'waktu_tutup' => Carbon::now()
+            ]);
+
+            DB::commit();
+
+            // Redirect ke dashboard dengan pesan sukses
+            return redirect()->route('kasir.dashboard')
+                ->with('success', 'Kas berhasil ditutup! Saldo akhir: Rp ' . number_format($kasHarian->saldo_akhir, 0, ',', '.'));
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            \Log::error('Error tutup kas: ' . $e->getMessage());
+
+            return redirect()->route('kasir.kas-harian.tutup-page')
+                ->with('error', 'Terjadi kesalahan saat menutup kas: ' . $e->getMessage());
         }
     }
 }

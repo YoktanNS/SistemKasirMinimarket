@@ -141,6 +141,8 @@ Route::prefix('kasir')->name('kasir.')->middleware(['auth', 'role:Kasir'])->grou
         
         // Reset (untuk development)
         Route::post('/reset-hari-ini', [KasHarianController::class, 'resetKasHariIni'])->name('reset-hari-ini');
+
+        Route::get('/tutup-page', [KasHarianController::class, 'tutupKasPage'])->name('tutup-page');
         
     });
 
